@@ -1,11 +1,20 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+from datetime import date
 
-st.set_page_config(page_title="Smart Library System", layout="wide")
+from login import login
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    login()
+    st.stop()
 
 st.title("📚 Smart Library Management System")
 
-# session storage
+# storage
 if "books" not in st.session_state:
     st.session_state.books = []
 
@@ -15,7 +24,7 @@ if "students" not in st.session_state:
 if "issued" not in st.session_state:
     st.session_state.issued = []
 
-menu = ["Dashboard","Add Book","View Books","Add Student","Issue Book","Return Book"]
+menu = ["Dashboard","Books","Students","Issue Book","Return Book"]
 
 choice = st.sidebar.selectbox("Menu",menu)
 
@@ -24,17 +33,27 @@ if choice == "Dashboard":
 
     col1,col2,col3 = st.columns(3)
 
-    col1.metric("Total Books", len(st.session_state.books))
-    col2.metric("Total Students", len(st.session_state.students))
-    col3.metric("Books Issued", len(st.session_state.issued))
+    col1.metric("Total Books",len(st.session_state.books))
+    col2.metric("Total Students",len(st.session_state.students))
+    col3.metric("Books Issued",len(st.session_state.issued))
 
-# ADD BOOK
-elif choice == "Add Book":
+    if st.session_state.books:
 
-    st.subheader("Add New Book")
+        df = pd.DataFrame(st.session_state.books)
 
-    title = st.text_input("Book Title")
+        chart = px.histogram(df,x="Author")
+
+        st.plotly_chart(chart)
+
+# BOOKS
+elif choice == "Books":
+
+    st.subheader("Add Book")
+
+    title = st.text_input("Title")
     author = st.text_input("Author")
+
+    image = st.file_uploader("Book Cover")
 
     if st.button("Add Book"):
 
@@ -43,29 +62,23 @@ elif choice == "Add Book":
             "Author":author
         })
 
-        st.success("Book Added Successfully")
-
-# VIEW BOOKS
-elif choice == "View Books":
+        st.success("Book Added")
 
     st.subheader("Library Books")
 
-    if len(st.session_state.books) > 0:
+    if st.session_state.books:
 
         df = pd.DataFrame(st.session_state.books)
 
-        search = st.text_input("Search Book")
+        search = st.text_input("Search")
 
         if search:
             df = df[df["Title"].str.contains(search,case=False)]
 
         st.dataframe(df)
 
-    else:
-        st.info("No books available")
-
-# ADD STUDENT
-elif choice == "Add Student":
+# STUDENTS
+elif choice == "Students":
 
     name = st.text_input("Student Name")
 
@@ -75,19 +88,24 @@ elif choice == "Add Student":
 
         st.success("Student Added")
 
+    st.write(st.session_state.students)
+
 # ISSUE BOOK
 elif choice == "Issue Book":
 
     if st.session_state.books and st.session_state.students:
 
-        book = st.selectbox("Select Book",[b["Title"] for b in st.session_state.books])
-        student = st.selectbox("Select Student",st.session_state.students)
+        book = st.selectbox("Book",[b["Title"] for b in st.session_state.books])
+        student = st.selectbox("Student",st.session_state.students)
+
+        due = st.date_input("Due Date")
 
         if st.button("Issue"):
 
             st.session_state.issued.append({
                 "Book":book,
-                "Student":student
+                "Student":student,
+                "Due":due
             })
 
             st.success("Book Issued")
@@ -99,9 +117,19 @@ elif choice == "Return Book":
 
         df = pd.DataFrame(st.session_state.issued)
 
-        book = st.selectbox("Select Book to Return",df["Book"])
+        book = st.selectbox("Select Book",df["Book"])
 
         if st.button("Return"):
+
+            today = date.today()
+
+            record = next(i for i in st.session_state.issued if i["Book"] == book)
+
+            if today > record["Due"]:
+
+                fine = (today-record["Due"]).days * 5
+
+                st.warning(f"Late Return. Fine ₹{fine}")
 
             st.session_state.issued = [
                 i for i in st.session_state.issued if i["Book"] != book
