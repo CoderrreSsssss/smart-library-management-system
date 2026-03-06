@@ -23,7 +23,6 @@ def login():
         if username in users and users[username]["password"] == password:
 
             st.session_state.user = username
-            st.session_state.role = users[username]["role"]
             st.success("Login successful")
             st.rerun()
 
@@ -43,11 +42,9 @@ def register():
     if st.button("Register"):
 
         if new_user in users:
-
             st.error("User already exists")
 
         else:
-
             users[new_user] = {
                 "password":new_pass,
                 "role":"student"
