@@ -1,18 +1,19 @@
 import streamlit as st
 import pandas as pd
+import json
+import plotly.express as px
 from auth import login,register
 
-st.set_page_config(page_title="Smart Library System")
+st.set_page_config(page_title="Smart Library",layout="wide")
 
+# LOGIN SYSTEM
 if "user" not in st.session_state:
 
     menu = ["Login","Register"]
-
     choice = st.sidebar.selectbox("Menu",menu)
 
     if choice == "Login":
         login()
-
     else:
         register()
 
@@ -20,24 +21,37 @@ if "user" not in st.session_state:
 
 st.title("📚 Smart Library Management System")
 
-st.sidebar.write("Logged in as:",st.session_state.user)
+# LOAD DEFAULT BOOKS
+if "books" not in st.session_state:
 
-if st.sidebar.button("Logout"):
-    st.session_state.clear()
-    st.rerun()
+    with open("books.json") as f:
+        data = json.load(f)
 
-menu = ["Dashboard","Books","Students"]
+    st.session_state.books = data["books"]
+
+menu = ["Dashboard","Books","Search"]
 
 choice = st.sidebar.selectbox("Menu",menu)
 
-if "books" not in st.session_state:
-    st.session_state.books = []
-
+# DASHBOARD
 if choice == "Dashboard":
 
-    st.metric("Total Books",len(st.session_state.books))
+    total_books = len(st.session_state.books)
 
+    col1,col2 = st.columns(2)
+
+    col1.metric("Total Books",total_books)
+
+    df = pd.DataFrame(st.session_state.books)
+
+    chart = px.histogram(df,x="author",title="Books by Author")
+
+    st.plotly_chart(chart,use_container_width=True)
+
+# BOOK MANAGEMENT
 elif choice == "Books":
+
+    st.subheader("Add Book")
 
     title = st.text_input("Book Title")
     author = st.text_input("Author")
@@ -45,18 +59,27 @@ elif choice == "Books":
     if st.button("Add Book"):
 
         st.session_state.books.append({
-            "Title":title,
-            "Author":author
+            "title":title,
+            "author":author
         })
 
         st.success("Book Added")
 
-    if st.session_state.books:
+    st.subheader("Library Books")
 
-        df = pd.DataFrame(st.session_state.books)
+    df = pd.DataFrame(st.session_state.books)
 
-        st.dataframe(df)
+    st.dataframe(df,use_container_width=True)
 
-elif choice == "Students":
+# SEARCH BOOK
+elif choice == "Search":
 
-    st.write("Student dashboard coming soon")
+    query = st.text_input("Search Book")
+
+    df = pd.DataFrame(st.session_state.books)
+
+    if query:
+
+        result = df[df["title"].str.contains(query,case=False)]
+
+        st.dataframe(result)
