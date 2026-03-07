@@ -2,21 +2,28 @@ import streamlit as st
 import sqlite3
 from datetime import date
 
-# ---------- DATABASE ----------
+# ---------------- DATABASE ----------------
 
 conn = sqlite3.connect("library.db", check_same_thread=False)
 c = conn.cursor()
 
+# Create users table
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
 name TEXT,
-email TEXT UNIQUE,
-password TEXT,
-role TEXT DEFAULT 'student'
+email TEXT,
+password TEXT
 )
 """)
 
+# Add role column if it doesn't exist
+try:
+    c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student'")
+except:
+    pass
+
+# Books table
 c.execute("""
 CREATE TABLE IF NOT EXISTS books(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,6 +33,7 @@ genre TEXT
 )
 """)
 
+# Borrow table
 c.execute("""
 CREATE TABLE IF NOT EXISTS borrow(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +46,7 @@ return_date TEXT
 
 conn.commit()
 
-# ---------- UI ----------
+# ---------------- UI ----------------
 
 st.set_page_config(page_title="Smart Library", layout="wide")
 
@@ -55,7 +63,7 @@ color:white !important;
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- SESSION ----------
+# ---------------- SESSION ----------------
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in=False
@@ -66,7 +74,7 @@ if "role" not in st.session_state:
 if "user_id" not in st.session_state:
     st.session_state.user_id=None
 
-# ---------- REGISTER ----------
+# ---------------- REGISTER ----------------
 
 def register():
 
@@ -83,10 +91,10 @@ def register():
             return
 
         c.execute("SELECT * FROM users WHERE email=?", (email,))
-        user = c.fetchone()
+        user=c.fetchone()
 
         if user:
-            st.error("Email already registered. Please login.")
+            st.error("Email already registered")
         else:
 
             c.execute(
@@ -98,7 +106,7 @@ def register():
 
             st.success("Account created successfully!")
 
-# ---------- LOGIN ----------
+# ---------------- LOGIN ----------------
 
 def login():
 
@@ -114,7 +122,7 @@ def login():
         (email,password)
         )
 
-        user = c.fetchone()
+        user=c.fetchone()
 
         if user:
 
@@ -127,10 +135,9 @@ def login():
             st.rerun()
 
         else:
-
             st.error("Invalid email or password")
 
-# ---------- STUDENT DASHBOARD ----------
+# ---------------- STUDENT DASHBOARD ----------------
 
 def student_dashboard():
 
@@ -139,7 +146,7 @@ def student_dashboard():
     search = st.text_input("🔎 Search Books")
 
     c.execute("SELECT * FROM books")
-    books = c.fetchall()
+    books=c.fetchall()
 
     for book in books:
 
@@ -149,7 +156,7 @@ def student_dashboard():
             st.write("Author:",book[2])
             st.write("Genre:",book[3])
 
-            if st.button(f"Issue Book {book[0]}"):
+            if st.button(f"Issue {book[0]}"):
 
                 c.execute("""
                 INSERT INTO borrow(user_id,book_id,issue_date)
@@ -169,7 +176,7 @@ def student_dashboard():
     WHERE borrow.user_id=?
     """,(st.session_state.user_id,))
 
-    issued = c.fetchall()
+    issued=c.fetchall()
 
     for book in issued:
 
@@ -191,7 +198,7 @@ def student_dashboard():
 
                 st.success("Book Returned")
 
-# ---------- ADMIN PANEL ----------
+# ---------------- ADMIN PANEL ----------------
 
 def admin_panel():
 
@@ -199,9 +206,9 @@ def admin_panel():
 
     st.subheader("➕ Add Book")
 
-    title = st.text_input("Book Title")
-    author = st.text_input("Author")
-    genre = st.text_input("Genre")
+    title=st.text_input("Book Title")
+    author=st.text_input("Author")
+    genre=st.text_input("Genre")
 
     if st.button("Add Book"):
 
@@ -221,7 +228,7 @@ def admin_panel():
     st.subheader("📚 All Books")
 
     c.execute("SELECT * FROM books")
-    books = c.fetchall()
+    books=c.fetchall()
 
     for book in books:
 
@@ -243,7 +250,7 @@ def admin_panel():
     JOIN books ON borrow.book_id=books.id
     """)
 
-    data = c.fetchall()
+    data=c.fetchall()
 
     for row in data:
 
@@ -253,7 +260,7 @@ def admin_panel():
         st.write("📅 Returned:",row[3])
         st.write("---")
 
-# ---------- MAIN APP ----------
+# ---------------- MAIN APP ----------------
 
 st.title("📚 Smart Library Management System")
 
