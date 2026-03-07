@@ -2,12 +2,11 @@ import streamlit as st
 import sqlite3
 from datetime import date
 
-# ---------------- DATABASE ----------------
+# ---------- DATABASE ----------
 
 conn = sqlite3.connect("library.db", check_same_thread=False)
 c = conn.cursor()
 
-# Users table
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,7 +17,6 @@ role TEXT DEFAULT 'student'
 )
 """)
 
-# Books table
 c.execute("""
 CREATE TABLE IF NOT EXISTS books(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +26,6 @@ genre TEXT
 )
 """)
 
-# Borrow table
 c.execute("""
 CREATE TABLE IF NOT EXISTS borrow(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,38 +38,35 @@ return_date TEXT
 
 conn.commit()
 
-# ---------------- UI ----------------
+# ---------- UI ----------
 
 st.set_page_config(page_title="Smart Library", layout="wide")
 
 st.markdown("""
 <style>
-
 .stApp{
 background: linear-gradient(to right,#141E30,#243B55);
 color:white;
 }
-
 button{
 background-color:#00c6ff !important;
 color:white !important;
 }
-
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- SESSION ----------------
+# ---------- SESSION ----------
 
 if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+    st.session_state.logged_in=False
 
 if "role" not in st.session_state:
-    st.session_state.role = None
+    st.session_state.role=None
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = None
+    st.session_state.user_id=None
 
-# ---------------- REGISTER ----------------
+# ---------- REGISTER ----------
 
 def register():
 
@@ -84,7 +78,16 @@ def register():
 
     if st.button("Create Account"):
 
-        try:
+        if name=="" or email=="" or password=="":
+            st.warning("Please fill all fields")
+            return
+
+        c.execute("SELECT * FROM users WHERE email=?", (email,))
+        user = c.fetchone()
+
+        if user:
+            st.error("Email already registered. Please login.")
+        else:
 
             c.execute(
             "INSERT INTO users(name,email,password,role) VALUES(?,?,?,?)",
@@ -93,13 +96,9 @@ def register():
 
             conn.commit()
 
-            st.success("Account created! Please login.")
+            st.success("Account created successfully!")
 
-        except:
-
-            st.error("Email already registered.")
-
-# ---------------- LOGIN ----------------
+# ---------- LOGIN ----------
 
 def login():
 
@@ -119,9 +118,9 @@ def login():
 
         if user:
 
-            st.session_state.logged_in = True
-            st.session_state.user_id = user[0]
-            st.session_state.role = user[4]
+            st.session_state.logged_in=True
+            st.session_state.user_id=user[0]
+            st.session_state.role=user[4]
 
             st.success("Login successful")
 
@@ -131,7 +130,7 @@ def login():
 
             st.error("Invalid email or password")
 
-# ---------------- STUDENT DASHBOARD ----------------
+# ---------- STUDENT DASHBOARD ----------
 
 def student_dashboard():
 
@@ -147,8 +146,8 @@ def student_dashboard():
         if search.lower() in book[1].lower():
 
             st.subheader(book[1])
-            st.write("Author:", book[2])
-            st.write("Genre:", book[3])
+            st.write("Author:",book[2])
+            st.write("Genre:",book[3])
 
             if st.button(f"Issue Book {book[0]}"):
 
@@ -174,9 +173,9 @@ def student_dashboard():
 
     for book in issued:
 
-        st.write("📘", book[0])
-        st.write("Issue Date:", book[1])
-        st.write("Return Date:", book[2])
+        st.write("📘",book[0])
+        st.write("Issue Date:",book[1])
+        st.write("Return Date:",book[2])
 
         if book[2] is None:
 
@@ -192,7 +191,7 @@ def student_dashboard():
 
                 st.success("Book Returned")
 
-# ---------------- ADMIN PANEL ----------------
+# ---------- ADMIN PANEL ----------
 
 def admin_panel():
 
@@ -206,14 +205,18 @@ def admin_panel():
 
     if st.button("Add Book"):
 
-        c.execute("""
-        INSERT INTO books(title,author,genre)
-        VALUES(?,?,?)
-        """,(title,author,genre))
+        if title=="" or author=="" or genre=="":
+            st.warning("Fill all fields")
+        else:
 
-        conn.commit()
+            c.execute("""
+            INSERT INTO books(title,author,genre)
+            VALUES(?,?,?)
+            """,(title,author,genre))
 
-        st.success("Book Added")
+            conn.commit()
+
+            st.success("Book Added")
 
     st.subheader("📚 All Books")
 
@@ -244,24 +247,24 @@ def admin_panel():
 
     for row in data:
 
-        st.write("👤 Student:", row[0])
-        st.write("📚 Book:", row[1])
-        st.write("📅 Issued:", row[2])
-        st.write("📅 Returned:", row[3])
+        st.write("👤 Student:",row[0])
+        st.write("📚 Book:",row[1])
+        st.write("📅 Issued:",row[2])
+        st.write("📅 Returned:",row[3])
         st.write("---")
 
-# ---------------- MAIN APP ----------------
+# ---------- MAIN APP ----------
 
 st.title("📚 Smart Library Management System")
 
-menu = st.sidebar.selectbox("Menu", ["Login","Register"])
+menu = st.sidebar.selectbox("Menu",["Login","Register"])
 
 if not st.session_state.logged_in:
 
-    if menu == "Login":
+    if menu=="Login":
         login()
 
-    if menu == "Register":
+    if menu=="Register":
         register()
 
 else:
@@ -269,11 +272,10 @@ else:
     st.sidebar.success("Logged in")
 
     if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
+        st.session_state.logged_in=False
         st.rerun()
 
-    if st.session_state.role == "admin":
+    if st.session_state.role=="admin":
         admin_panel()
-
     else:
         student_dashboard()
