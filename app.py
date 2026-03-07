@@ -4,26 +4,25 @@ import hashlib
 import pandas as pd
 from datetime import datetime
 
-st.set_page_config(page_title="Smart Library",layout="wide")
+st.set_page_config(page_title="Smart Library System",layout="wide")
 
-# ---------------- STYLING ---------------- #
+# ---------------- UI STYLE ---------------- #
 
 st.markdown("""
 <style>
 
-body {
-background-color:#f4f6fb;
+body{
+background:#f4f6fb;
 }
 
 .stButton>button{
-background-color:#4CAF50;
+background:#4CAF50;
 color:white;
 border-radius:10px;
 }
 
 .sidebar .sidebar-content{
-background-color:#1e1e2f;
-color:white;
+background:#1e1e2f;
 }
 
 </style>
@@ -65,6 +64,16 @@ def create_tables():
     )
     """)
 
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS reviews(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    book_id INTEGER,
+    rating INTEGER,
+    review TEXT
+    )
+    """)
+
     conn.commit()
 
 create_tables()
@@ -81,7 +90,7 @@ def seed_books():
     c.execute("SELECT COUNT(*) FROM books")
     count=c.fetchone()[0]
 
-    if count==0:
+    if count<50:
 
         books=[
         ("Atomic Habits","James Clear","Self Help"),
@@ -97,10 +106,10 @@ def seed_books():
         ]
 
         for i in range(5):
-            for title,author,category in books:
+            for b in books:
                 c.execute(
                 "INSERT INTO books(title,author,category) VALUES(?,?,?)",
-                (title,author,category)
+                (b[0],b[1],b[2])
                 )
 
         conn.commit()
@@ -111,7 +120,7 @@ seed_books()
 
 def login():
 
-    st.title("📚 Smart Library System")
+    st.title("📚 Smart Library")
 
     email=st.text_input("Email")
     password=st.text_input("Password",type="password")
@@ -137,19 +146,19 @@ def login():
             st.rerun()
 
         else:
-            st.error("Invalid Credentials")
+            st.error("Invalid Login")
 
 # ---------------- REGISTER ---------------- #
 
 def register():
 
-    st.title("Create Account")
+    st.title("Register")
 
     name=st.text_input("Name")
     email=st.text_input("Email")
     password=st.text_input("Password",type="password")
 
-    if st.button("Register"):
+    if st.button("Create Account"):
 
         try:
 
@@ -174,7 +183,7 @@ def admin_dashboard():
     st.title("👑 Admin Dashboard")
 
     menu=st.sidebar.selectbox(
-    "Menu",
+    "Admin Menu",
     ["Analytics","Add Book","Remove Book","All Books","Borrow Records"]
     )
 
@@ -248,8 +257,8 @@ def student_dashboard():
     st.title("📖 Student Dashboard")
 
     menu=st.sidebar.selectbox(
-    "Menu",
-    ["Browse Books","My Books","Search"]
+    "Student Menu",
+    ["Browse Books","My Books","Search","Recommend","Reviews"]
     )
 
     if menu=="Browse Books":
@@ -282,13 +291,35 @@ def student_dashboard():
     elif menu=="My Books":
 
         data=pd.read_sql_query("""
-        SELECT books.title,borrow.issue_date,borrow.return_date
+        SELECT books.title,borrow.issue_date,borrow.return_date,borrow.book_id
         FROM borrow
         JOIN books ON books.id=borrow.book_id
         WHERE borrow.user_id=?
         """,conn,params=(st.session_state.user_id,))
 
         st.dataframe(data)
+
+        for i,row in data.iterrows():
+
+            if row["return_date"]=="Not Returned":
+
+                if st.button("Return "+row["title"],key=i):
+
+                    c.execute("""
+                    UPDATE borrow
+                    SET return_date=?
+                    WHERE user_id=? AND book_id=? AND return_date='Not Returned'
+                    """,
+                    (
+                    str(datetime.today().date()),
+                    st.session_state.user_id,
+                    row["book_id"]
+                    )
+                    )
+
+                    conn.commit()
+
+                    st.success("Returned")
 
     elif menu=="Search":
 
@@ -298,13 +329,44 @@ def student_dashboard():
 
             data=pd.read_sql_query("""
             SELECT * FROM books
-            WHERE title LIKE ? OR author LIKE ?
+            WHERE title LIKE ? OR author LIKE ? OR category LIKE ?
             """,
             conn,
-            params=(f"%{q}%",f"%{q}%")
+            params=(f"%{q}%",f"%{q}%",f"%{q}%")
             )
 
             st.dataframe(data)
+
+    elif menu=="Recommend":
+
+        st.subheader("🤖 Book Recommendation")
+
+        books=pd.read_sql_query("SELECT * FROM books",conn)
+
+        category=st.selectbox("Choose Category",books["category"].unique())
+
+        rec=books[books["category"]==category]
+
+        st.dataframe(rec[["title","author"]])
+
+    elif menu=="Reviews":
+
+        st.subheader("⭐ Rate Library")
+
+        rating=st.slider("Rating",1,5)
+        review=st.text_area("Write Review")
+
+        if st.button("Submit Review"):
+
+            c.execute("""
+            INSERT INTO reviews(user_id,book_id,rating,review)
+            VALUES(?,?,?,?)
+            """,
+            (st.session_state.user_id,1,rating,review))
+
+            conn.commit()
+
+            st.success("Review Submitted")
 
 # ---------------- SESSION ---------------- #
 
