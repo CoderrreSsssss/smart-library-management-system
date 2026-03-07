@@ -1,47 +1,26 @@
-import json
-import bcrypt
+from database import connect_db
 
-USERS_FILE = "data/users.json"
+def register(name,email,password):
 
-def load_users():
+    conn = connect_db()
+    c = conn.cursor()
 
-    with open(USERS_FILE) as f:
-        return json.load(f)
+    c.execute(
+    "INSERT INTO users(name,email,password,role) VALUES(?,?,?,?)",
+    (name,email,password,"student")
+    )
 
-def save_users(users):
+    conn.commit()
 
-    with open(USERS_FILE,"w") as f:
-        json.dump(users,f,indent=2)
 
-def register(username,password):
+def login(email,password):
 
-    users = load_users()
+    conn = connect_db()
+    c = conn.cursor()
 
-    if username in users:
-        return False
+    c.execute(
+    "SELECT * FROM users WHERE email=? AND password=?",
+    (email,password)
+    )
 
-    hashed = bcrypt.hashpw(password.encode(),bcrypt.gensalt()).decode()
-
-    users[username] = {
-        "password":hashed,
-        "role":"student"
-    }
-
-    save_users(users)
-
-    return True
-
-def login(username,password):
-
-    users = load_users()
-
-    if username not in users:
-        return False,None
-
-    hashed = users[username]["password"].encode()
-
-    if bcrypt.checkpw(password.encode(),hashed):
-
-        return True,users[username]["role"]
-
-    return False,None
+    return c.fetchone()
