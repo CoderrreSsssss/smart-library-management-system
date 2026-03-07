@@ -1,5 +1,5 @@
 from database import connect_db
-
+from reviews import add_review, get_reviews
 def add_review(book_id, rating, review):
 
     conn = connect_db()
