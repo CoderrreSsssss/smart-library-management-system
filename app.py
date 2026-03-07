@@ -4,15 +4,20 @@ import hashlib
 import pandas as pd
 from datetime import datetime
 
-# ---------------- DATABASE ---------------- #
+# ---------- DATABASE ----------
 
 conn = sqlite3.connect("library.db", check_same_thread=False)
 c = conn.cursor()
 
-def init_db():
+def reset_db():
+
+    c.execute("DROP TABLE IF EXISTS users")
+    c.execute("DROP TABLE IF EXISTS books")
+    c.execute("DROP TABLE IF EXISTS borrow")
+    c.execute("DROP TABLE IF EXISTS reviews")
 
     c.execute("""
-    CREATE TABLE IF NOT EXISTS users(
+    CREATE TABLE users(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
         email TEXT UNIQUE,
@@ -22,7 +27,7 @@ def init_db():
     """)
 
     c.execute("""
-    CREATE TABLE IF NOT EXISTS books(
+    CREATE TABLE books(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT,
         author TEXT,
@@ -31,7 +36,7 @@ def init_db():
     """)
 
     c.execute("""
-    CREATE TABLE IF NOT EXISTS borrow(
+    CREATE TABLE borrow(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         book_id INTEGER,
@@ -41,7 +46,7 @@ def init_db():
     """)
 
     c.execute("""
-    CREATE TABLE IF NOT EXISTS reviews(
+    CREATE TABLE reviews(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         book_id INTEGER,
@@ -52,54 +57,49 @@ def init_db():
 
     conn.commit()
 
-init_db()
+def seed_books():
 
-# ---------------- PASSWORD HASH ---------------- #
+    books = [
+    ("Atomic Habits","James Clear","Self Help"),
+    ("Rich Dad Poor Dad","Robert Kiyosaki","Finance"),
+    ("Deep Work","Cal Newport","Productivity"),
+    ("The Alchemist","Paulo Coelho","Fiction"),
+    ("Harry Potter","J.K Rowling","Fantasy"),
+    ("Think and Grow Rich","Napoleon Hill","Success"),
+    ("Psychology of Money","Morgan Housel","Finance"),
+    ("Ikigai","Hector Garcia","Self Help"),
+    ("Sapiens","Yuval Noah Harari","History"),
+    ("Zero to One","Peter Thiel","Startup")
+    ]
+
+    for i in range(5):
+        for title,author,category in books:
+            c.execute(
+            "INSERT INTO books(title,author,category) VALUES(?,?,?)",
+            (title,author,category)
+            )
+
+    conn.commit()
+
+# Run database setup once
+if "db_ready" not in st.session_state:
+    reset_db()
+    seed_books()
+    st.session_state.db_ready = True
+
+# ---------- PASSWORD ----------
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ---------------- DEFAULT BOOKS ---------------- #
-
-def seed_books():
-
-    c.execute("SELECT COUNT(*) FROM books")
-    count = c.fetchone()[0]
-
-    if count < 50:
-
-        books = [
-        ("Atomic Habits","James Clear","Self Help"),
-        ("Rich Dad Poor Dad","Robert Kiyosaki","Finance"),
-        ("Deep Work","Cal Newport","Productivity"),
-        ("The Alchemist","Paulo Coelho","Fiction"),
-        ("Harry Potter","J.K Rowling","Fantasy"),
-        ("Think and Grow Rich","Napoleon Hill","Success"),
-        ("Psychology of Money","Morgan Housel","Finance"),
-        ("Ikigai","Hector Garcia","Self Help"),
-        ("Sapiens","Yuval Noah Harari","History"),
-        ("Zero to One","Peter Thiel","Startup")
-        ]
-
-        for i in range(5):
-            for title,author,category in books:
-                c.execute(
-                "INSERT INTO books(title,author,category) VALUES(?,?,?)",
-                (title,author,category)
-                )
-
-        conn.commit()
-
-seed_books()
-
-# ---------------- LOGIN ---------------- #
+# ---------- LOGIN ----------
 
 def login():
 
     st.title("📚 Smart Library Login")
 
     email = st.text_input("Email")
-    password = st.text_input("Password",type="password")
+    password = st.text_input("Password", type="password")
 
     if st.button("Login"):
 
@@ -107,7 +107,7 @@ def login():
 
         c.execute(
         "SELECT * FROM users WHERE email=? AND password=?",
-        (email,hashed)
+        (email, hashed)
         )
 
         user = c.fetchone()
@@ -123,7 +123,7 @@ def login():
         else:
             st.error("Invalid credentials")
 
-# ---------------- REGISTER ---------------- #
+# ---------- REGISTER ----------
 
 def register():
 
@@ -131,7 +131,7 @@ def register():
 
     name = st.text_input("Name")
     email = st.text_input("Email")
-    password = st.text_input("Password",type="password")
+    password = st.text_input("Password", type="password")
 
     if st.button("Create Account"):
 
@@ -151,7 +151,7 @@ def register():
         except:
             st.error("Email already exists")
 
-# ---------------- ADMIN DASHBOARD ---------------- #
+# ---------- ADMIN DASHBOARD ----------
 
 def admin_dashboard():
 
@@ -164,11 +164,11 @@ def admin_dashboard():
 
     if menu=="Analytics":
 
-        books = pd.read_sql_query("SELECT * FROM books",conn)
-        borrow = pd.read_sql_query("SELECT * FROM borrow",conn)
+        books = pd.read_sql_query("SELECT * FROM books", conn)
+        borrow = pd.read_sql_query("SELECT * FROM borrow", conn)
 
-        st.metric("Total Books",len(books))
-        st.metric("Total Borrowed",len(borrow))
+        st.metric("Total Books", len(books))
+        st.metric("Borrowed Books", len(borrow))
 
         st.bar_chart(books["category"].value_counts())
 
@@ -178,7 +178,7 @@ def admin_dashboard():
         author = st.text_input("Author")
         category = st.text_input("Category")
 
-        if st.button("Add Book"):
+        if st.button("Add"):
 
             c.execute(
             "INSERT INTO books(title,author,category) VALUES(?,?,?)",
@@ -218,7 +218,7 @@ def admin_dashboard():
 
         st.dataframe(data)
 
-# ---------------- STUDENT DASHBOARD ---------------- #
+# ---------- STUDENT DASHBOARD ----------
 
 def student_dashboard():
 
@@ -226,7 +226,7 @@ def student_dashboard():
 
     menu = st.sidebar.selectbox(
     "Menu",
-    ["Browse Books","My Books","Search","Recommend","Reviews"]
+    ["Browse Books","My Books","Search"]
     )
 
     if menu=="Browse Books":
@@ -259,7 +259,7 @@ def student_dashboard():
     elif menu=="My Books":
 
         data = pd.read_sql_query("""
-        SELECT books.title,borrow.issue_date,borrow.return_date,borrow.book_id
+        SELECT books.title,borrow.issue_date,borrow.return_date
         FROM borrow
         JOIN books ON books.id=borrow.book_id
         WHERE borrow.user_id=?
@@ -267,79 +267,28 @@ def student_dashboard():
 
         st.dataframe(data)
 
-        for i,row in data.iterrows():
-
-            if row["return_date"]=="Not Returned":
-
-                if st.button("Return "+row["title"],key=i):
-
-                    c.execute("""
-                    UPDATE borrow
-                    SET return_date=?
-                    WHERE user_id=? AND book_id=? AND return_date='Not Returned'
-                    """,
-                    (
-                    str(datetime.today().date()),
-                    st.session_state.user_id,
-                    row["book_id"]
-                    )
-                    )
-
-                    conn.commit()
-
-                    st.success("Returned")
-
     elif menu=="Search":
 
-        q = st.text_input("Search Books")
+        q = st.text_input("Search")
 
         if q:
 
             data = pd.read_sql_query("""
             SELECT * FROM books
-            WHERE title LIKE ? OR author LIKE ? OR category LIKE ?
+            WHERE title LIKE ? OR author LIKE ?
             """,
             conn,
-            params=(f"%{q}%",f"%{q}%",f"%{q}%")
+            params=(f"%{q}%",f"%{q}%")
             )
 
             st.dataframe(data)
 
-    elif menu=="Recommend":
-
-        st.subheader("🤖 AI Recommendation")
-
-        books = pd.read_sql_query("SELECT * FROM books",conn)
-
-        category = st.selectbox("Choose Category",books["category"].unique())
-
-        rec = books[books["category"]==category]
-
-        st.dataframe(rec[["title","author"]])
-
-    elif menu=="Reviews":
-
-        rating = st.slider("Rating",1,5)
-        review = st.text_area("Write Review")
-
-        if st.button("Submit Review"):
-
-            c.execute("""
-            INSERT INTO reviews(user_id,book_id,rating,review)
-            VALUES(?,?,?,?)
-            """,
-            (st.session_state.user_id,1,rating,review))
-
-            conn.commit()
-
-            st.success("Review submitted")
-
-# ---------------- SESSION ---------------- #
+# ---------- SESSION ----------
 
 if "logged" not in st.session_state:
-    st.session_state.logged=False
+    st.session_state.logged = False
 
-# ---------------- MAIN ---------------- #
+# ---------- MAIN ----------
 
 if not st.session_state.logged:
 
