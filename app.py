@@ -1,113 +1,73 @@
 import streamlit as st
-import json
-import pandas as pd
-import plotly.express as px
-from auth import login,register
-from recommender import recommend
+from database import create_tables
+from books import add_book,get_books
+from borrow import borrow_book
+from reviews import add_review,get_reviews
+from recommendation import recommend
 
-st.set_page_config(page_title="Smart Library AI",layout="wide")
+create_tables()
 
-# LOAD BOOKS
-with open("data/books.json") as f:
-    books = json.load(f)["books"]
+st.title("📚 Smart AI Library")
 
-df = pd.DataFrame(books)
+menu = st.sidebar.selectbox(
+"Menu",
+["Add Book","Library","AI Recommendation"]
+)
 
-if "user" not in st.session_state:
-    st.session_state.user=None
-    st.session_state.role=None
+if menu=="Add Book":
 
-# LOGIN PAGE
-if not st.session_state.user:
+    st.header("Add New Book")
 
-    st.title("📚 Smart Library AI")
+    title = st.text_input("Book Title")
+    author = st.text_input("Author")
+    genre = st.text_input("Genre")
 
-    tab1,tab2 = st.tabs(["Login","Register"])
+    if st.button("Add Book"):
 
-    with tab1:
+        add_book(title,author,genre)
 
-        u = st.text_input("Username")
-        p = st.text_input("Password",type="password")
+        st.success("Book Added")
 
-        if st.button("Login"):
 
-            ok,role = login(u,p)
+elif menu=="Library":
 
-            if ok:
+    st.header("Public Library")
 
-                st.session_state.user=u
-                st.session_state.role=role
-                st.rerun()
+    books = get_books()
 
-            else:
-                st.error("Invalid login")
+    for book in books:
 
-    with tab2:
+        st.subheader(book[1])
+        st.write("Author:",book[2])
+        st.write("Genre:",book[3])
 
-        ru = st.text_input("New Username")
-        rp = st.text_input("New Password",type="password")
+        if st.button(f"Borrow {book[0]}"):
 
-        if st.button("Register"):
+            borrow_book(1,book[0])
 
-            if register(ru,rp):
-                st.success("Account created")
-            else:
-                st.error("User exists")
+            st.success("Book Borrowed")
 
-else:
+        rating = st.slider(f"Rate {book[0]}",1,5)
 
-    st.sidebar.title("📚 Smart Library")
+        review = st.text_input("Write Review")
 
-    menu = st.sidebar.selectbox(
-        "Menu",
-        ["Dashboard","Search","AI Recommendation","Analytics"]
-    )
+        if st.button(f"Submit Review {book[0]}"):
 
-    if st.sidebar.button("Logout"):
-        st.session_state.user=None
-        st.rerun()
+            add_review(book[0],rating,review)
 
-    if menu=="Dashboard":
+        reviews = get_reviews(book[0])
 
-        st.title("Library Dashboard")
+        for r in reviews:
 
-        c1,c2,c3 = st.columns(3)
+            st.write("⭐",r[0],"-",r[1])
 
-        c1.metric("Total Books",len(df))
-        c2.metric("Authors",df.author.nunique())
-        c3.metric("Genres",df.genre.nunique())
 
-        st.dataframe(df.head(20))
+elif menu=="AI Recommendation":
 
-    elif menu=="Search":
+    st.header("🤖 AI Book Recommendation")
 
-        q = st.text_input("Search Book")
+    rec = recommend()
 
-        if q:
+    for r in rec:
 
-            res = df[df.title.str.contains(q,case=False)]
-
-            st.dataframe(res)
-
-    elif menu=="AI Recommendation":
-
-        book = st.selectbox("Select Book",df.title)
-
-        if st.button("Recommend"):
-
-            rec = recommend(book,books)
-
-            st.write("Recommended Books")
-
-            for r in rec:
-                st.write("-",r)
-
-    elif menu=="Analytics":
-
-        fig = px.histogram(df,x="genre")
-
-        st.plotly_chart(fig)
-
-        fig2 = px.pie(df,names="author")
-
-        st.plotly_chart(fig2)
+        st.write("📖",r)
