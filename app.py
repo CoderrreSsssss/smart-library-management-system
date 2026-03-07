@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import hashlib
+import pandas as pd
 from datetime import datetime
 
 # ---------------- DATABASE ---------------- #
@@ -39,6 +40,16 @@ def init_db():
     )
     """)
 
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS reviews(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        book_id INTEGER,
+        rating INTEGER,
+        review TEXT
+    )
+    """)
+
     conn.commit()
 
 init_db()
@@ -55,7 +66,7 @@ def seed_books():
     c.execute("SELECT COUNT(*) FROM books")
     count = c.fetchone()[0]
 
-    if count == 0:
+    if count < 50:
 
         books = [
         ("Atomic Habits","James Clear","Self Help"),
@@ -88,7 +99,7 @@ def login():
     st.title("📚 Smart Library Login")
 
     email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    password = st.text_input("Password",type="password")
 
     if st.button("Login"):
 
@@ -102,13 +113,15 @@ def login():
         user = c.fetchone()
 
         if user:
+
             st.session_state.logged = True
             st.session_state.user_id = user[0]
             st.session_state.role = user[4]
+
             st.rerun()
 
         else:
-            st.error("Invalid login")
+            st.error("Invalid credentials")
 
 # ---------------- REGISTER ---------------- #
 
@@ -118,7 +131,7 @@ def register():
 
     name = st.text_input("Name")
     email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    password = st.text_input("Password",type="password")
 
     if st.button("Create Account"):
 
@@ -138,24 +151,34 @@ def register():
         except:
             st.error("Email already exists")
 
-# ---------------- ADMIN ---------------- #
+# ---------------- ADMIN DASHBOARD ---------------- #
 
 def admin_dashboard():
 
-    st.title("👑 Admin Panel")
+    st.title("👑 Admin Dashboard")
 
     menu = st.sidebar.selectbox(
     "Menu",
-    ["Add Book","Remove Book","View Books","Borrow Records"]
+    ["Analytics","Add Book","Remove Book","All Books","Borrow Records"]
     )
 
-    if menu=="Add Book":
+    if menu=="Analytics":
+
+        books = pd.read_sql_query("SELECT * FROM books",conn)
+        borrow = pd.read_sql_query("SELECT * FROM borrow",conn)
+
+        st.metric("Total Books",len(books))
+        st.metric("Total Borrowed",len(borrow))
+
+        st.bar_chart(books["category"].value_counts())
+
+    elif menu=="Add Book":
 
         title = st.text_input("Title")
         author = st.text_input("Author")
         category = st.text_input("Category")
 
-        if st.button("Add"):
+        if st.button("Add Book"):
 
             c.execute(
             "INSERT INTO books(title,author,category) VALUES(?,?,?)",
@@ -164,49 +187,38 @@ def admin_dashboard():
 
             conn.commit()
 
-            st.success("Book added")
+            st.success("Book Added")
 
     elif menu=="Remove Book":
 
-        c.execute("SELECT id,title FROM books")
-        books = c.fetchall()
+        books = pd.read_sql_query("SELECT * FROM books",conn)
 
-        titles = [b[1] for b in books]
-
-        selected = st.selectbox("Book", titles)
+        book = st.selectbox("Select Book",books["title"])
 
         if st.button("Delete"):
 
-            c.execute(
-            "DELETE FROM books WHERE title=?",
-            (selected,)
-            )
-
+            c.execute("DELETE FROM books WHERE title=?",(book,))
             conn.commit()
 
-            st.success("Book deleted")
+            st.success("Book Deleted")
 
-    elif menu=="View Books":
+    elif menu=="All Books":
 
-        c.execute("SELECT * FROM books")
-        data = c.fetchall()
-
-        st.write(data)
+        books = pd.read_sql_query("SELECT * FROM books",conn)
+        st.dataframe(books)
 
     elif menu=="Borrow Records":
 
-        c.execute("""
+        data = pd.read_sql_query("""
         SELECT users.name,books.title,borrow.issue_date,borrow.return_date
         FROM borrow
         JOIN users ON users.id=borrow.user_id
         JOIN books ON books.id=borrow.book_id
-        """)
+        """,conn)
 
-        data = c.fetchall()
+        st.dataframe(data)
 
-        st.write(data)
-
-# ---------------- STUDENT ---------------- #
+# ---------------- STUDENT DASHBOARD ---------------- #
 
 def student_dashboard():
 
@@ -214,20 +226,19 @@ def student_dashboard():
 
     menu = st.sidebar.selectbox(
     "Menu",
-    ["Browse Books","My Books","Search"]
+    ["Browse Books","My Books","Search","Recommend","Reviews"]
     )
 
     if menu=="Browse Books":
 
-        c.execute("SELECT * FROM books")
-        books = c.fetchall()
+        books = pd.read_sql_query("SELECT * FROM books",conn)
 
-        for book in books:
+        for i,row in books.iterrows():
 
-            st.subheader(book[1])
-            st.write(book[2],"|",book[3])
+            st.subheader(row["title"])
+            st.write(row["author"],"|",row["category"])
 
-            if st.button("Issue", key=book[0]):
+            if st.button("Issue Book",key=row["id"]):
 
                 c.execute("""
                 INSERT INTO borrow(user_id,book_id,issue_date,return_date)
@@ -235,7 +246,7 @@ def student_dashboard():
                 """,
                 (
                 st.session_state.user_id,
-                book[0],
+                row["id"],
                 str(datetime.today().date()),
                 "Not Returned"
                 )
@@ -243,39 +254,85 @@ def student_dashboard():
 
                 conn.commit()
 
-                st.success("Book issued")
+                st.success("Book Issued")
 
     elif menu=="My Books":
 
-        c.execute("""
-        SELECT books.title,borrow.issue_date,borrow.return_date
+        data = pd.read_sql_query("""
+        SELECT books.title,borrow.issue_date,borrow.return_date,borrow.book_id
         FROM borrow
         JOIN books ON books.id=borrow.book_id
         WHERE borrow.user_id=?
-        """,
-        (st.session_state.user_id,)
-        )
+        """,conn,params=(st.session_state.user_id,))
 
-        data = c.fetchall()
+        st.dataframe(data)
 
-        st.write(data)
+        for i,row in data.iterrows():
+
+            if row["return_date"]=="Not Returned":
+
+                if st.button("Return "+row["title"],key=i):
+
+                    c.execute("""
+                    UPDATE borrow
+                    SET return_date=?
+                    WHERE user_id=? AND book_id=? AND return_date='Not Returned'
+                    """,
+                    (
+                    str(datetime.today().date()),
+                    st.session_state.user_id,
+                    row["book_id"]
+                    )
+                    )
+
+                    conn.commit()
+
+                    st.success("Returned")
 
     elif menu=="Search":
 
-        q = st.text_input("Search")
+        q = st.text_input("Search Books")
 
         if q:
 
-            c.execute("""
+            data = pd.read_sql_query("""
             SELECT * FROM books
-            WHERE title LIKE ? OR author LIKE ?
+            WHERE title LIKE ? OR author LIKE ? OR category LIKE ?
             """,
-            (f"%{q}%",f"%{q}%")
+            conn,
+            params=(f"%{q}%",f"%{q}%",f"%{q}%")
             )
 
-            data = c.fetchall()
+            st.dataframe(data)
 
-            st.write(data)
+    elif menu=="Recommend":
+
+        st.subheader("🤖 AI Recommendation")
+
+        books = pd.read_sql_query("SELECT * FROM books",conn)
+
+        category = st.selectbox("Choose Category",books["category"].unique())
+
+        rec = books[books["category"]==category]
+
+        st.dataframe(rec[["title","author"]])
+
+    elif menu=="Reviews":
+
+        rating = st.slider("Rating",1,5)
+        review = st.text_area("Write Review")
+
+        if st.button("Submit Review"):
+
+            c.execute("""
+            INSERT INTO reviews(user_id,book_id,rating,review)
+            VALUES(?,?,?,?)
+            """,
+            (st.session_state.user_id,1,rating,review))
+
+            conn.commit()
+
+            st.success("Review submitted")
 
 # ---------------- SESSION ---------------- #
 
