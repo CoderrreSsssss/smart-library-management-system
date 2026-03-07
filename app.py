@@ -1,288 +1,322 @@
 import streamlit as st
 import sqlite3
-from datetime import date
+import hashlib
+import pandas as pd
+from datetime import datetime
 
-# ---------------- DATABASE ----------------
+# ---------------- DATABASE ---------------- #
 
-conn = sqlite3.connect("library.db", check_same_thread=False)
+conn = sqlite3.connect("library.db",check_same_thread=False)
 c = conn.cursor()
 
-# Create users table
-c.execute("""
-CREATE TABLE IF NOT EXISTS users(
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-name TEXT,
-email TEXT,
-password TEXT
-)
-""")
+def create_tables():
 
-# Add role column if it doesn't exist
-try:
-    c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student'")
-except:
-    pass
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    email TEXT UNIQUE,
+    password TEXT,
+    role TEXT)
+    """)
 
-# Books table
-c.execute("""
-CREATE TABLE IF NOT EXISTS books(
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-title TEXT,
-author TEXT,
-genre TEXT
-)
-""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS books(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    author TEXT,
+    category TEXT)
+    """)
 
-# Borrow table
-c.execute("""
-CREATE TABLE IF NOT EXISTS borrow(
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-user_id INTEGER,
-book_id INTEGER,
-issue_date TEXT,
-return_date TEXT
-)
-""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS borrow(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    book_id INTEGER,
+    issue_date TEXT,
+    return_date TEXT)
+    """)
 
-conn.commit()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS reviews(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER,
+    user_id INTEGER,
+    rating INTEGER,
+    review TEXT)
+    """)
 
-# ---------------- UI ----------------
+    conn.commit()
 
-st.set_page_config(page_title="Smart Library", layout="wide")
+create_tables()
 
-st.markdown("""
-<style>
-.stApp{
-background: linear-gradient(to right,#141E30,#243B55);
-color:white;
-}
-button{
-background-color:#00c6ff !important;
-color:white !important;
-}
-</style>
-""", unsafe_allow_html=True)
+# ---------------- PASSWORD HASH ---------------- #
 
-# ---------------- SESSION ----------------
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in=False
+# ---------------- DEFAULT BOOKS ---------------- #
 
-if "role" not in st.session_state:
-    st.session_state.role=None
+def add_default_books():
 
-if "user_id" not in st.session_state:
-    st.session_state.user_id=None
+    c.execute("SELECT COUNT(*) FROM books")
+    count=c.fetchone()[0]
 
-# ---------------- REGISTER ----------------
+    if count==0:
 
-def register():
+        books=[
+        ("Atomic Habits","James Clear","Self Help"),
+        ("Rich Dad Poor Dad","Robert Kiyosaki","Finance"),
+        ("Deep Work","Cal Newport","Productivity"),
+        ("The Alchemist","Paulo Coelho","Fiction"),
+        ("Harry Potter","J.K Rowling","Fantasy"),
+        ("Think and Grow Rich","Napoleon Hill","Success"),
+        ("Psychology of Money","Morgan Housel","Finance"),
+        ("Ikigai","Hector Garcia","Self Help"),
+        ("Sapiens","Yuval Noah Harari","History"),
+        ("Zero to One","Peter Thiel","Startup")
+        ]
 
-    st.subheader("📝 Register")
+        for i in range(5):
+            for b in books:
+                c.execute("INSERT INTO books(title,author,category) VALUES(?,?,?)",b)
 
-    name = st.text_input("Name")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+        conn.commit()
 
-    if st.button("Create Account"):
+add_default_books()
 
-        if name=="" or email=="" or password=="":
-            st.warning("Please fill all fields")
-            return
-
-        c.execute("SELECT * FROM users WHERE email=?", (email,))
-        user=c.fetchone()
-
-        if user:
-            st.error("Email already registered")
-        else:
-
-            c.execute(
-            "INSERT INTO users(name,email,password,role) VALUES(?,?,?,?)",
-            (name,email,password,"student")
-            )
-
-            conn.commit()
-
-            st.success("Account created successfully!")
-
-# ---------------- LOGIN ----------------
+# ---------------- LOGIN ---------------- #
 
 def login():
 
-    st.subheader("🔐 Login")
+    st.title("📚 Smart Library Login")
 
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    email=st.text_input("Email")
+    password=st.text_input("Password",type="password")
 
     if st.button("Login"):
 
-        c.execute(
-        "SELECT * FROM users WHERE email=? AND password=?",
-        (email,password)
-        )
+        password=hash_password(password)
 
+        c.execute("SELECT * FROM users WHERE email=? AND password=?",(email,password))
         user=c.fetchone()
 
         if user:
 
-            st.session_state.logged_in=True
+            st.session_state.logged=True
             st.session_state.user_id=user[0]
             st.session_state.role=user[4]
-
-            st.success("Login successful")
-
+            st.success("Login Successful")
             st.rerun()
 
         else:
-            st.error("Invalid email or password")
+            st.error("Invalid credentials")
 
-# ---------------- STUDENT DASHBOARD ----------------
+# ---------------- REGISTER ---------------- #
+
+def register():
+
+    st.title("📚 Register")
+
+    name=st.text_input("Name")
+    email=st.text_input("Email")
+    password=st.text_input("Password",type="password")
+
+    if st.button("Register"):
+
+        password=hash_password(password)
+
+        try:
+            c.execute("INSERT INTO users(name,email,password,role) VALUES(?,?,?,?)",
+            (name,email,password,"student"))
+            conn.commit()
+
+            st.success("Account Created!")
+
+        except:
+            st.error("Email already registered")
+
+# ---------------- ADMIN DASHBOARD ---------------- #
+
+def admin_dashboard():
+
+    st.title("👑 Admin Dashboard")
+
+    menu=st.sidebar.selectbox("Menu",
+    ["Analytics","Add Book","Remove Book","All Books","Issued Books"])
+
+    if menu=="Analytics":
+
+        st.subheader("📊 Library Analytics")
+
+        books=pd.read_sql_query("SELECT * FROM books",conn)
+        borrow=pd.read_sql_query("SELECT * FROM borrow",conn)
+
+        st.metric("Total Books",len(books))
+        st.metric("Total Issued",len(borrow))
+
+        if not books.empty:
+            st.bar_chart(books["category"].value_counts())
+
+    elif menu=="Add Book":
+
+        st.subheader("➕ Add Book")
+
+        title=st.text_input("Title")
+        author=st.text_input("Author")
+        category=st.text_input("Category")
+
+        if st.button("Add"):
+
+            c.execute("INSERT INTO books(title,author,category) VALUES(?,?,?)",
+            (title,author,category))
+
+            conn.commit()
+            st.success("Book Added")
+
+    elif menu=="Remove Book":
+
+        st.subheader("❌ Remove Book")
+
+        books=pd.read_sql_query("SELECT * FROM books",conn)
+
+        book=st.selectbox("Select Book",books["title"])
+
+        if st.button("Delete"):
+
+            c.execute("DELETE FROM books WHERE title=?",(book,))
+            conn.commit()
+
+            st.success("Book Deleted")
+
+    elif menu=="All Books":
+
+        st.subheader("📚 All Books")
+
+        books=pd.read_sql_query("SELECT * FROM books",conn)
+        st.dataframe(books)
+
+    elif menu=="Issued Books":
+
+        st.subheader("📖 Borrow Records")
+
+        data=pd.read_sql_query("""
+        SELECT users.name,books.title,borrow.issue_date,borrow.return_date
+        FROM borrow
+        JOIN users ON borrow.user_id=users.id
+        JOIN books ON borrow.book_id=books.id
+        """,conn)
+
+        st.dataframe(data)
+
+# ---------------- STUDENT DASHBOARD ---------------- #
 
 def student_dashboard():
 
-    st.title("📚 Student Dashboard")
+    st.title("📚 Student Library")
 
-    search = st.text_input("🔎 Search Books")
+    menu=st.sidebar.selectbox("Menu",
+    ["Browse Books","My Books","Search","Recommend"])
 
-    c.execute("SELECT * FROM books")
-    books=c.fetchall()
+    if menu=="Browse Books":
 
-    for book in books:
+        books=pd.read_sql_query("SELECT * FROM books",conn)
 
-        if search.lower() in book[1].lower():
+        for i,row in books.iterrows():
 
-            st.subheader(book[1])
-            st.write("Author:",book[2])
-            st.write("Genre:",book[3])
+            st.subheader(row["title"])
+            st.write(row["author"],"|",row["category"])
 
-            if st.button(f"Issue {book[0]}"):
+            if st.button("Issue",key=row["id"]):
 
                 c.execute("""
-                INSERT INTO borrow(user_id,book_id,issue_date)
-                VALUES(?,?,?)
-                """,(st.session_state.user_id,book[0],str(date.today())))
+                INSERT INTO borrow(user_id,book_id,issue_date,return_date)
+                VALUES(?,?,?,?)
+                """,
+                (st.session_state.user_id,row["id"],datetime.today().date(),"Not Returned"))
 
                 conn.commit()
 
-                st.success("Book Issued!")
+                st.success("Book Issued")
 
-    st.subheader("📖 My Issued Books")
+    elif menu=="My Books":
 
-    c.execute("""
-    SELECT books.title,borrow.issue_date,borrow.return_date,borrow.book_id
-    FROM borrow
-    JOIN books ON books.id=borrow.book_id
-    WHERE borrow.user_id=?
-    """,(st.session_state.user_id,))
+        data=pd.read_sql_query("""
+        SELECT books.title,borrow.issue_date,borrow.return_date,borrow.book_id
+        FROM borrow
+        JOIN books ON borrow.book_id=books.id
+        WHERE borrow.user_id=?
+        """,conn,params=(st.session_state.user_id,))
 
-    issued=c.fetchall()
+        st.dataframe(data)
 
-    for book in issued:
+        for i,row in data.iterrows():
 
-        st.write("📘",book[0])
-        st.write("Issue Date:",book[1])
-        st.write("Return Date:",book[2])
+            if row["return_date"]=="Not Returned":
 
-        if book[2] is None:
+                if st.button("Return "+row["title"],key=i):
 
-            if st.button(f"Return {book[3]}"):
+                    c.execute("""
+                    UPDATE borrow
+                    SET return_date=?
+                    WHERE user_id=? AND book_id=? AND return_date='Not Returned'
+                    """,
+                    (datetime.today().date(),
+                    st.session_state.user_id,row["book_id"]))
 
-                c.execute("""
-                UPDATE borrow
-                SET return_date=?
-                WHERE book_id=? AND user_id=? AND return_date IS NULL
-                """,(str(date.today()),book[3],st.session_state.user_id))
+                    conn.commit()
+                    st.success("Returned")
 
-                conn.commit()
+    elif menu=="Search":
 
-                st.success("Book Returned")
+        q=st.text_input("Search Books")
 
-# ---------------- ADMIN PANEL ----------------
+        if q:
 
-def admin_panel():
+            data=pd.read_sql_query("""
+            SELECT * FROM books
+            WHERE title LIKE ? OR author LIKE ? OR category LIKE ?
+            """,conn,params=(f"%{q}%",f"%{q}%",f"%{q}%"))
 
-    st.title("🛠 Admin Panel")
+            st.dataframe(data)
 
-    st.subheader("➕ Add Book")
+    elif menu=="Recommend":
 
-    title=st.text_input("Book Title")
-    author=st.text_input("Author")
-    genre=st.text_input("Genre")
+        st.subheader("🤖 AI Book Recommendation")
 
-    if st.button("Add Book"):
+        books=pd.read_sql_query("SELECT * FROM books",conn)
 
-        if title=="" or author=="" or genre=="":
-            st.warning("Fill all fields")
-        else:
+        cat=st.selectbox("Select Category",books["category"].unique())
 
-            c.execute("""
-            INSERT INTO books(title,author,genre)
-            VALUES(?,?,?)
-            """,(title,author,genre))
+        rec=books[books["category"]==cat]
 
-            conn.commit()
+        st.write("Recommended Books")
 
-            st.success("Book Added")
+        st.dataframe(rec[["title","author"]])
 
-    st.subheader("📚 All Books")
+# ---------------- SESSION ---------------- #
 
-    c.execute("SELECT * FROM books")
-    books=c.fetchall()
+if "logged" not in st.session_state:
+    st.session_state.logged=False
 
-    for book in books:
+# ---------------- MAIN ---------------- #
 
-        st.write(book)
+if not st.session_state.logged:
 
-        if st.button(f"Delete {book[0]}"):
+    choice=st.sidebar.selectbox("Menu",["Login","Register"])
 
-            c.execute("DELETE FROM books WHERE id=?", (book[0],))
-            conn.commit()
-
-            st.warning("Book Deleted")
-
-    st.subheader("📊 Issued Books")
-
-    c.execute("""
-    SELECT users.name,books.title,borrow.issue_date,borrow.return_date
-    FROM borrow
-    JOIN users ON borrow.user_id=users.id
-    JOIN books ON borrow.book_id=books.id
-    """)
-
-    data=c.fetchall()
-
-    for row in data:
-
-        st.write("👤 Student:",row[0])
-        st.write("📚 Book:",row[1])
-        st.write("📅 Issued:",row[2])
-        st.write("📅 Returned:",row[3])
-        st.write("---")
-
-# ---------------- MAIN APP ----------------
-
-st.title("📚 Smart Library Management System")
-
-menu = st.sidebar.selectbox("Menu",["Login","Register"])
-
-if not st.session_state.logged_in:
-
-    if menu=="Login":
+    if choice=="Login":
         login()
-
-    if menu=="Register":
+    else:
         register()
 
 else:
 
-    st.sidebar.success("Logged in")
-
-    if st.sidebar.button("Logout"):
-        st.session_state.logged_in=False
-        st.rerun()
-
     if st.session_state.role=="admin":
-        admin_panel()
+        admin_dashboard()
     else:
         student_dashboard()
+
+    if st.sidebar.button("Logout"):
+        st.session_state.logged=False
+        st.rerun()
